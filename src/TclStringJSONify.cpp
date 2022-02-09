@@ -32,9 +32,10 @@ private:
 	mutable std::size_t m_idx = 0;
 	static constexpr int tabWidth = 4;
 
-	mutable bool m_bPrevWordReserved = false;
-	const std::unordered_set<std::string> m_reservedWords{ "coords", "properties" };
+	static std::unordered_set<std::string> s_reservedWords;
 };
+
+std::unordered_set<std::string> TclFormatter::s_reservedWords{ "coords", "comment", "properties", "string", "extLength" };
 
 TclFormatter::TclFormatter(std::string tclString)
 	: m_tclString(std::move(tclString))
@@ -53,34 +54,33 @@ tWordLevels TclFormatter::parse() const
 	tWordLevels wordAtLevels;
 	int level = 0;
 
+	bool bPrevWordReserved = false;
+	std::string prevWord;
 	for (m_idx = 0; m_idx < m_strLen; ++m_idx)
 	{
 		switch (auto ch = m_tclString[m_idx])
 		{
 			case '}':
 			{
-				if (m_bPrevWordReserved)
-					m_bPrevWordReserved = false;
+				if (bPrevWordReserved)
+					bPrevWordReserved = false;
 				else
 					--level;
 				wordAtLevels.emplace_back(closingBracket, level);
 				break;
 			}
 			case '{':
+				if (!wordAtLevels.empty() && s_reservedWords.contains(wordAtLevels.back().word))
+					bPrevWordReserved = true;
+
 				wordAtLevels.emplace_back(openingBracket, level);
-				if (!m_bPrevWordReserved)
+				if (!bPrevWordReserved)
 					++level;
 				[[fallthrough]];
 			default:
 			{
-				std::string word = readUntilDelimiter();
-				if (!word.empty())
-				{
-					if (m_reservedWords.contains(word))
-						m_bPrevWordReserved = true;
-
+				if (const std::string word = readUntilDelimiter(); !word.empty())
 					wordAtLevels.emplace_back(word, level);
-				}
 				break;
 			}
 		}
@@ -109,7 +109,7 @@ std::string TclFormatter::build(tWordLevels wordAtLevels)
 			if (nextLevel != level)
 				break;
 
-			if (previousIsClosingBracket && !isClosingBracket(nextWord))
+			if (previousIsClosingBracket && !isClosingBracket(nextWord) /*&& !s_reservedWords.contains(word)*/)
 				break;
 			
 			result += ' ';
